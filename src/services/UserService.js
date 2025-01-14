@@ -38,3 +38,19 @@ export const uploadAvatar = async (userId, selectedFile) => {
     throw error;
   }
 };
+
+export const createUser = async data => {
+  const res = await axios.post(`${API_URL_BACK_END}/user/create`, data);
+  return res.data;
+};
+
+export const hideUser = async (id, data) => {
+  const res = await axios.put(`${API_URL_BACK_END}/user/hideShow/${id}`, data);
+
+  return res.data;
+};
+
+export const deleteUser = async id => {
+  const res = await axios.delete(`${API_URL_BACK_END}/user/delete/${id}`);
+  return res.data;
+};

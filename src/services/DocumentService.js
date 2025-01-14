@@ -56,10 +56,8 @@ export const hideAndShowDocument = async (id, isHide) => {
 };
 
 export const signDocument = async ({id, data}) => {
+  console.log(id, data);
   const res = await axios.put(`${API_URL_BACK_END}/document/sign/${id}`, data);
-  console.log('id', id);
-  console.log('data', data);
-
   return res.data;
 };
 

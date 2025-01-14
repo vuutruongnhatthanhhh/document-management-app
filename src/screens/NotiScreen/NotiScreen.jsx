@@ -12,11 +12,12 @@ import {
   Modal,
   Alert,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 
 import MenuComponent from '../../components/MenuComponent/MenuComponent';
 import {useSelector} from 'react-redux';
-import {getDocumentById} from '../../services/DocumentService';
+import {getDocumentById, signDocument} from '../../services/DocumentService';
 import {
   createManagerNoti,
   deleteNoti,
@@ -28,6 +29,7 @@ import {notiList} from '../../redux/slides/notiSlide';
 import {useDispatch} from 'react-redux';
 import {WebView} from 'react-native-webview';
 import InAppBrowser from 'react-native-inappbrowser-reborn';
+import dayjs from 'dayjs';
 
 const {width, height} = Dimensions.get('window');
 
@@ -58,12 +60,16 @@ const NotiScreen = () => {
     title: '',
     message: '',
   });
+  const [isLoadingSign, setIsLoadingSign] = useState(false);
+  const [isLoadingRefuse, setIsLoadingRefuse] = useState(false);
+  const [isLoadingSendNoti, setIsLoadingSendNoti] = useState(false);
 
   const mutationAddManagerNoti = useMutationHooks(data =>
     createManagerNoti(data),
   );
 
   const handleSendManagerNoti = () => {
+    setIsLoadingSendNoti(true);
     mutationAddManagerNoti.mutate(
       {
         title: titleNotiManager,
@@ -73,6 +79,7 @@ const NotiScreen = () => {
       {
         onSuccess: async () => {
           Alert.alert('Thành công', 'Gửi thông báo thành công');
+          setIsLoadingSendNoti(false);
           // if (shouldAddLog) {
           //   mutationAddLog.mutate({
           //     content: `đã thêm thông báo mới`,
@@ -85,6 +92,7 @@ const NotiScreen = () => {
         },
         onError: () => {
           Alert.alert('Lỗi', 'Cần điền đầy đủ thông tin khi gửi thông báo');
+          setIsLoadingSendNoti(false);
           setTitleNotiManager(null);
           setContentNotiManager(null);
         },
@@ -121,12 +129,65 @@ const NotiScreen = () => {
   };
 
   const handleConfirmDelete = notificationId => {
+    setIsLoadingRefuse(true);
     mutationDeleteNoti.mutate(notificationId);
+  };
+
+  const mutationSign = useMutationHooks(
+    async mutationData => await signDocument(mutationData),
+  );
+
+  const getAllNotiRedux = async () => {
+    try {
+      const notifications = await getAllNoti();
+      dispatch(notiList({notifications}));
+    } catch (error) {
+      console.error('Error fetching all notifications by userId', error);
+    }
+  };
+
+  const handleDeleteNoti = async id => {
+    await deleteNoti(id);
+    getAllNotiRedux();
+  };
+
+  const handleSign = (idNoti, docId) => {
+    setIsLoadingSign(true);
+    const idUser = user?.id;
+    const name = user?.name; // Thay thế bằng logic lấy tên người ký
+    const currentTime = dayjs().format('DD-MM-YYYY HH:mm');
+    const mutationData = {
+      id: docId,
+      data: {
+        name,
+        time: currentTime,
+        idUser,
+      },
+    };
+    mutationSign.mutate(mutationData, {
+      onSuccess: async () => {
+        handleDeleteNoti(idNoti);
+        setIsLoadingSign(false);
+        Alert.alert('Thành công', 'Ký tài liệu thành công!');
+        // if (shouldAddLog) {
+        //   mutationAddLog.mutate({
+        //     content: `đã ký tệp <span style="color:red">${docName}</span>`,
+        //     id_user: user?.id,
+        //     status: 6,
+        //   });
+        // }
+      },
+      onError: error => {
+        console.error('Error signing document:', error);
+        Alert.alert('Lỗi', 'Ký tài liệu thất bại, vui lòng thử lại.');
+      },
+    });
   };
 
   const handleOptionSelect = async option => {
     const notificationId = selectedNotification.id;
-    if (option === 'Từ chối') {
+    const docId = selectedNotification.id_document;
+    if (option === 'refuse') {
       // Hiển thị confirm dialog
       Alert.alert(
         'Xác nhận',
@@ -145,14 +206,30 @@ const NotiScreen = () => {
         {cancelable: false}, // Không cho phép đóng hộp thoại ngoài vùng xác nhận
       );
     }
-    if (option === 'Xem') {
+    if (option === 'view') {
       // Hiển thị confirm dialog
       // setIsModalViewVisible(true);
       const dataDoc = await getDocumentById(selectedNotification.id_document);
-      console.log('dataDoc', dataDoc.url);
-      await InAppBrowser.open(
-        `https://view.officeapps.live.com/op/view.aspx?src=${dataDoc.url}`,
+      const docUrl = dataDoc.url;
+      const extension = docUrl.split('.').pop().toLowerCase();
+
+      // Kiểm tra extension
+      const isPdfOrImage = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(
+        extension,
       );
+      if (isPdfOrImage) {
+        // Nếu là file PDF hoặc ảnh, mở trực tiếp
+        await InAppBrowser.open(docUrl);
+      } else {
+        // Nếu không, mở qua Office Viewer
+        await InAppBrowser.open(
+          `https://view.officeapps.live.com/op/view.aspx?src=${docUrl}`,
+        );
+      }
+    }
+
+    if (option === 'sign') {
+      handleSign(notificationId, docId);
     }
     setDropdownPosition(null);
   };
@@ -163,7 +240,11 @@ const NotiScreen = () => {
 
   const findSenderAvatar = id_sender => {
     const sender = users.find(user => user.id === id_sender);
-    return {uri: sender?.avatar}; // Trả về URL avatar hoặc null
+    return {
+      uri:
+        sender?.avatar ||
+        'https://cdn-icons-png.flaticon.com/512/6596/6596121.png',
+    }; // Trả về URL avatar hoặc null
   };
 
   const findSenderName = id_sender => {
@@ -192,7 +273,12 @@ const NotiScreen = () => {
         <TouchableOpacity
           onPress={event => handleMoreOptions(event, item)}
           style={styles.moreOptions}>
-          <Text style={styles.moreOptionsText}>⋮</Text>
+          {isLoadingSign || isLoadingRefuse ? (
+            // Hiển thị biểu tượng loading thay cho nội dung nút
+            <ActivityIndicator size="small" color="blue" />
+          ) : (
+            <Text style={styles.moreOptionsText}>⋮</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -263,9 +349,11 @@ const NotiScreen = () => {
       // }
       getAllNotification();
       Alert.alert('Thành công', 'Từ chối yêu cầu thành công');
+      setIsLoadingRefuse(false);
     },
     onError: () => {
       Alert.alert('Lỗi', 'Có lỗi xảy ra khi từ chối yêu cầu');
+      setIsLoadingRefuse(false);
     },
   });
 
@@ -302,36 +390,43 @@ const NotiScreen = () => {
           animationType="fade"
           onRequestClose={() => setIsModalVisible(false)}>
           <TouchableWithoutFeedback onPress={() => setIsModalVisible(false)}>
-            <View style={styles.modalOverlay}>
-              <View style={styles.modal}>
-                <Text style={styles.modalTitle}>Gửi Thông Báo</Text>
-                <TextInput
-                  placeholder="Tiêu đề"
-                  value={titleNotiManager}
-                  onChangeText={handleChangeTitleNotiManager}
-                  style={styles.input}
-                />
-                <TextInput
-                  placeholder="Nội dung"
-                  value={contentNotiManager}
-                  onChangeText={handleChangeContentNotiManager}
-                  style={styles.input}
-                  multiline
-                />
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity
-                    onPress={handleSendManagerNoti}
-                    style={styles.modalButton}>
-                    <Text style={styles.modalButtonText}>Gửi</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => setIsModalVisible(false)}
-                    style={styles.modalButton}>
-                    <Text style={styles.modalButtonText}>Hủy</Text>
-                  </TouchableOpacity>
+            {isLoadingSendNoti ? (
+              // Hiển thị biểu tượng loading thay cho nội dung nút
+              <ActivityIndicator size="small" color="blue" />
+            ) : (
+              <View style={styles.modalOverlay}>
+                <View style={styles.modal}>
+                  <Text style={styles.modalTitle}>Gửi Thông Báo</Text>
+                  <TextInput
+                    placeholder="Tiêu đề"
+                    value={titleNotiManager}
+                    onChangeText={handleChangeTitleNotiManager}
+                    style={styles.input}
+                  />
+                  <TextInput
+                    placeholder="Nội dung"
+                    value={contentNotiManager}
+                    onChangeText={handleChangeContentNotiManager}
+                    style={styles.input}
+                    multiline
+                  />
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        handleSendManagerNoti();
+                      }}
+                      style={styles.modalButton}>
+                      <Text style={styles.modalButtonText}>Gửi</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setIsModalVisible(false)}
+                      style={styles.modalButton}>
+                      <Text style={styles.modalButtonText}>Hủy</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-            </View>
+            )}
           </TouchableWithoutFeedback>
         </Modal>
 
@@ -344,17 +439,17 @@ const NotiScreen = () => {
             ]}>
             <View style={[styles.modal, {zIndex: 999}]}>
               <TouchableOpacity
-                onPress={() => handleOptionSelect('Xem')}
+                onPress={() => handleOptionSelect('view')}
                 style={styles.modalOption}>
                 <Text style={styles.modalOptionText}>Xem</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => handleOptionSelect('Ký')}
+                onPress={() => handleOptionSelect('sign')}
                 style={styles.modalOption}>
                 <Text style={styles.modalOptionText}>Ký</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => handleOptionSelect('Từ chối')}
+                onPress={() => handleOptionSelect('refuse')}
                 style={styles.modalOption}>
                 <Text style={styles.modalOptionText}>Từ chối</Text>
               </TouchableOpacity>

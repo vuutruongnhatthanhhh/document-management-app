@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useRef, useEffect} from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native'; // Hook để sử dụng navigation
 import {useSelector} from 'react-redux';
+import PushNotification from 'react-native-push-notification';
 
 const MenuComponent = () => {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
@@ -15,9 +16,39 @@ const MenuComponent = () => {
   const notifications = useSelector(state => state.notifications.notifications);
   const user = useSelector(state => state?.user);
 
+  // const createChannels = () => {
+  //   PushNotification.createChannel({
+  //     channelId: 'test-channel',
+  //     channelName: 'Test Channel',
+  //   });
+  // };
+
+  // const handleNotification = () => {
+  //   PushNotification.localNotification({
+  //     channelId: 'test-channel',
+  //     title: 'Ký xác nhận',
+  //     message: 'Bạn có yêu cầu ký xác nhận',
+  //   });
+  // };
+
   const unreadCount = notifications.filter(
     noti => noti.status === 0 && noti.id_receiver === user.id,
   ).length;
+
+  // const prevUnreadCount = useRef(unreadCount);
+
+  // useEffect(() => {
+  //   createChannels();
+  // }, []);
+
+  // useEffect(() => {
+  //   if (unreadCount > prevUnreadCount.current) {
+  //     console.log(unreadCount, prevUnreadCount);
+  //     handleNotification();
+  //   }
+  //   // Cập nhật giá trị trước đó sau khi kiểm tra
+  //   prevUnreadCount.current = unreadCount;
+  // }, [unreadCount]);
 
   // Hàm để toggle trạng thái menu (ẩn/hiện)
   const toggleMenu = () => {
@@ -48,6 +79,11 @@ const MenuComponent = () => {
         <View style={styles.bar}></View>
         <View style={styles.bar}></View>
         <View style={styles.bar}></View>
+        {unreadCount > 0 && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{unreadCount}</Text>
+          </View>
+        )}
       </TouchableOpacity>
 
       {/* Menu */}
@@ -132,6 +168,22 @@ const styles = StyleSheet.create({
   },
   unread: {
     color: 'red',
+  },
+  badge: {
+    position: 'absolute',
+    top: -5, // Điều chỉnh vị trí badge
+    right: -5, // Điều chỉnh vị trí badge
+    backgroundColor: 'red',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
 
